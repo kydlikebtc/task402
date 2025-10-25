@@ -168,6 +168,48 @@ contract X402Escrow is ReentrancyGuard {
     }
 
     /**
+     * @notice 注册外部支付（用于 EIP-3009，资金已转入）
+     * @param paymentHash 支付哈希
+     * @param payee Agent 地址
+     * @param token 代币地址
+     * @param amount 金额
+     * @param deadline 截止时间
+     * @param taskId 任务ID
+     * @dev 仅授权合约可调用，用于 EIP-3009 等场景
+     */
+    function registerExternalPayment(
+        bytes32 paymentHash,
+        address payer,
+        address payee,
+        address token,
+        uint256 amount,
+        uint256 deadline,
+        uint256 taskId
+    ) external nonReentrant {
+        require(authorizedContracts[msg.sender], "Not authorized");
+        require(payments[paymentHash].payer == address(0), "Payment exists");
+        require(payer != address(0), "Invalid payer");
+        require(payee != address(0), "Invalid payee");
+        require(amount > 0, "Invalid amount");
+        require(deadline > block.timestamp, "Invalid deadline");
+
+        // 创建支付记录（资金已经在 Escrow 中）
+        payments[paymentHash] = Payment({
+            payer: payer,  // 使用参数传入的 payer
+            payee: payee,
+            token: token,
+            amount: amount,
+            createdAt: block.timestamp,
+            deadline: deadline,
+            status: PaymentStatus.Pending,
+            taskId: taskId,
+            disputed: false
+        });
+
+        emit PaymentCreated(paymentHash, payer, payee, amount, taskId);
+    }
+
+    /**
      * @notice 结算支付（任务完成后调用）
      * @param paymentHash 支付哈希
      */

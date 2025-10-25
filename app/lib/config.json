@@ -3,9 +3,9 @@
   "chainName": "Hardhat Local",
   "rpcUrl": "http://127.0.0.1:8545",
   "contracts": {
-    "taskRegistry": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
-    "escrow": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-    "usdc": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+    "taskRegistry": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "escrow": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "usdc": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
   },
   "accounts": {
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",

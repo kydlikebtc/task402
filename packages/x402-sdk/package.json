@@ -1,16 +1,27 @@
 {
   "name": "@task402/x402-sdk",
   "version": "1.0.0",
-  "description": "X402 Client SDK - EIP-3009 signature generation utilities",
-  "main": "src/index.js",
-  "type": "module",
+  "description": "X402 SDK with EIP-3009 support for gasless USDC transactions",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest"
   },
-  "keywords": ["x402", "eip-3009", "sdk", "usdc"],
-  "author": "Task402 Team",
+  "keywords": [
+    "x402",
+    "eip-3009",
+    "usdc",
+    "gasless"
+  ],
+  "author": "",
   "license": "MIT",
   "dependencies": {
     "ethers": "^6.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
   }
 }

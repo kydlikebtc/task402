@@ -1,0 +1,19 @@
+{
+  "port": 3001,
+  "rpcUrl": "http://127.0.0.1:8545",
+  "chainId": 31337,
+  "privateKey": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  "contracts": {
+    "taskRegistry": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "escrow": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "usdc": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+  },
+  "rateLimit": {
+    "windowMs": 3600000,
+    "maxRequests": 100
+  },
+  "gasLimit": {
+    "maxGasPrice": "100",
+    "maxGasLimit": 500000
+  }
+}

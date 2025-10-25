@@ -249,6 +249,97 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
     }
 
     /**
+     * @notice 使用 EIP-3009 签名创建任务（零 Gas）
+     * @param description 任务描述
+     * @param reward 奖励金额 (USDC)
+     * @param deadline 截止时间戳
+     * @param category 任务分类
+     * @param validAfter EIP-3009 签名生效时间
+     * @param validBefore EIP-3009 签名过期时间
+     * @param nonce EIP-3009 nonce
+     * @param v 签名 v
+     * @param r 签名 r
+     * @param s 签名 s
+     */
+    function createTaskWithEIP3009(
+        address creator,
+        string memory description,
+        uint256 reward,
+        uint256 deadline,
+        TaskCategory category,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant returns (uint256) {
+        require(creator != address(0), "Invalid creator");
+        require(bytes(description).length > 0, "Empty description");
+        require(reward > 0, "Invalid reward");
+        require(deadline > block.timestamp, "Invalid deadline");
+
+        // 生成任务ID
+        _taskIdCounter++;
+        uint256 taskId = _taskIdCounter;
+
+        // 使用 EIP-3009 transferWithAuthorization
+        // Creator 签名授权将 USDC 从自己的地址转到 Escrow
+        IUSDC usdc = IUSDC(usdcAddress);
+        usdc.transferWithAuthorization(
+            creator,            // from: Creator 地址（参数传入）
+            address(escrow),    // to: Escrow 合约
+            reward,             // value: 奖励金额
+            validAfter,
+            validBefore,
+            nonce,
+            v, r, s
+        );
+
+        // 生成支付哈希
+        bytes32 paymentHash = keccak256(
+            abi.encodePacked(taskId, creator, reward, block.timestamp)
+        );
+
+        // 注册支付到 Escrow（不需要实际转账，USDC 已经在上面转入）
+        escrow.registerExternalPayment(
+            paymentHash,
+            creator,         // payer: Creator
+            address(this),   // payee: TaskRegistry (后续会更新为 Agent)
+            usdcAddress,
+            reward,
+            deadline,
+            taskId
+        );
+
+        // 创建任务
+        tasks[taskId] = Task({
+            taskId: taskId,
+            creator: creator,  // 使用参数传入的 creator
+            description: description,
+            reward: reward,
+            rewardToken: usdcAddress,
+            deadline: deadline,
+            status: TaskStatus.Open,
+            assignedAgent: address(0),
+            resultHash: "",
+            paymentHash: paymentHash,
+            createdAt: block.timestamp,
+            completedAt: 0,
+            category: category,
+            stakeAmount: 0,
+            stakeRefunded: false
+        });
+
+        // 铸造任务 NFT 给 Creator
+        _safeMint(creator, taskId);
+
+        emit TaskCreated(taskId, creator, reward, category, deadline);
+
+        return taskId;
+    }
+
+    /**
      * @notice Agent 质押接单
      * @param taskId 任务ID
      * @dev Agent 需要质押任务奖励的一定比例(默认20%)才能接单

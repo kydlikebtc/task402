@@ -1,298 +1,330 @@
-# 🚀 Task402 快速开始指南
+# X402 快速开始指南
 
-**5 分钟快速体验 Task402 区块链任务市场**
-
----
-
-## ⏱️ 时间安排
-
-- **第 1 分钟**: 启动本地环境
-- **第 2 分钟**: 部署智能合约
-- **第 3 分钟**: 配置 MetaMask
-- **第 4 分钟**: 创建测试任务
-- **第 5 分钟**: 体验完整流程
+5分钟快速启动 X402 平台（含零 Gas 费功能）
 
 ---
 
 ## 📋 前置要求
 
-确保已安装:
-- ✅ Node.js v22+
-- ✅ MetaMask 浏览器扩展
+- Node.js v22+
+- npm v10+
+- MetaMask 钱包
 
 ---
 
-## 🏃 快速开始
+## 🚀 启动步骤
 
-### 步骤 1: 启动 Hardhat 网络 (30秒)
+### 1. 安装依赖
 
 ```bash
-cd /Users/kyd/task402/packages/contracts
+# 根目录
+npm install
+
+# 合约
+cd packages/contracts
+npm install
+
+# Facilitator（零 Gas 功能）
+cd ../facilitator
+npm install
+```
+
+### 2. 启动 Hardhat 网络
+
+**终端 1**:
+```bash
+cd packages/contracts
 npx hardhat node
 ```
 
-✅ **成功标志**: 看到 "Started HTTP and WebSocket JSON-RPC server"
+保持运行，记录测试账户地址。
 
-⚠️ **保持此终端运行!**
+### 3. 部署合约
 
----
-
-### 步骤 2: 部署合约 (30秒)
-
-**新开一个终端**:
-
+**终端 2**:
 ```bash
-cd /Users/kyd/task402/packages/contracts
+cd packages/contracts
 npx hardhat run scripts/deploy-local.js --network localhost
 ```
 
-✅ **成功标志**: 看到合约地址:
+输出示例：
 ```
-✅ MockUSDC: 0x5FC8...707
-✅ X402Escrow: 0x0165...B8F
-✅ TaskRegistry: 0xa513...853
+MockUSDC:      0x0165878A594ca255338adfa4d48449f69242Eb8F
+X402Escrow:    0xa513E6E4b8f2a923D98304ec87F64353C4D5C853
+TaskRegistry:  0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6
 ```
 
----
+### 4. 启动 Facilitator 服务器（零 Gas 功能）
 
-### 步骤 3: 启动前端 (30秒)
-
-**再开一个终端**:
-
+**终端 3**:
 ```bash
-cd /Users/kyd/task402/app
+cd packages/facilitator
 npm run dev
 ```
 
-✅ **成功标志**: 访问 http://localhost:3000
+输出：
+```
+==============================================
+  Facilitator Server Started
+==============================================
+  Port: 3001
+  Chain ID: 31337
+  TaskRegistry: 0x2279...
+```
+
+### 5. 启动前端
+
+**终端 4**:
+```bash
+cd ../..  # 回到项目根目录
+npm run dev
+```
+
+访问: http://localhost:3000
 
 ---
 
-### 步骤 4: 配置 MetaMask (1分钟)
+## 🦊 配置 MetaMask
 
-#### 4.1 添加 Hardhat 网络
+### 添加 Hardhat 网络
 
 1. 打开 MetaMask
-2. 点击网络下拉菜单 → "添加网络"
-3. 填写信息:
-   - **网络名称**: `Hardhat Local`
-   - **RPC URL**: `http://127.0.0.1:8545`
-   - **Chain ID**: `31337`
-   - **货币符号**: `ETH`
-4. 点击"保存"
-
-#### 4.2 导入测试账户
-
-回到 **Hardhat node 终端**,找到账户私钥:
+2. 点击网络下拉菜单
+3. 选择"添加网络"
+4. 选择"手动添加网络"
+5. 填写信息：
 
 ```
-Account #0: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 (10000 ETH)
+网络名称: Hardhat Local
+RPC URL: http://127.0.0.1:8545
+Chain ID: 31337
+货币符号: ETH
+```
+
+### 导入测试账户
+
+从终端1（Hardhat node）复制私钥，导入至少 2 个账户到 MetaMask。
+
+**示例账户**:
+```
+Account #0: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 Private Key: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-Account #1: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 (10000 ETH)
+Account #1: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 Private Key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 ```
 
-在 MetaMask 中:
-1. 点击右上角账户图标
-2. 选择"导入账户"
-3. 粘贴 Account #0 的私钥
-4. 重复导入 Account #1
-
-✅ **成功标志**: 看到 2 个账户,每个有 10000 ETH
-
 ---
 
-### 步骤 5: 铸造测试 USDC (1分钟)
+## 💰 铸造测试 USDC
 
-**新开终端**:
+### 方法 1: 使用 Hardhat Console（推荐）
 
 ```bash
-cd /Users/kyd/task402/packages/contracts
+cd packages/contracts
 npx hardhat console --network localhost
 ```
 
-在 Hardhat 控制台中执行:
+在 console 中：
+```javascript
+const USDC = await ethers.getContractFactory("MockUSDC");
+const usdc = await USDC.attach("0x0165878A594ca255338adfa4d48449f69242Eb8F");
+
+// 给账户铸造 1000 USDC
+await usdc.mint("0xYOUR_ADDRESS", ethers.parseUnits("1000", 6));
+```
+
+### 方法 2: 使用 Hardhat 任务
+
+```bash
+cd packages/contracts
+npx hardhat mint-usdc --address 0xYOUR_ADDRESS --amount 1000 --network localhost
+```
+
+---
+
+## ✅ 测试零 Gas 费功能
+
+### 运行测试脚本
+
+```bash
+cd packages/contracts
+npx hardhat run scripts/test-eip3009-flow.js --network localhost
+```
+
+**期望输出**：
+```
+🚀 EIP-3009 零 Gas 费集成测试
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 所有测试通过!
+✅ 任务创建成功! Task ID: 1
+✅ Creator 零 Gas 费 (0 ETH)
+✅ USDC 成功托管到 Escrow (10.0 USDC)
+✅ Nonce 防重放机制生效
+✅ EIP-3009 签名验证通过
+
+Gas 成本分析:
+   💸 Creator 支付: 0 ETH (零 Gas 费！)
+   💸 Facilitator 支付: 0.000127 ETH
+```
+
+---
+
+## 🎨 前端使用
+
+### 创建任务（零 Gas 模式）
+
+1. 访问 http://localhost:3000/create
+2. 连接 MetaMask
+3. 启用"⚡ 零 Gas 费模式"开关
+4. 填写任务信息：
+   - 描述: 测试任务
+   - 奖励: 10 USDC
+   - 截止时间: 7天后
+   - 分类: 开发
+5. 点击"创建任务"
+6. MetaMask 弹出签名请求（无需 Gas）
+7. 签名确认
+8. ✅ 任务创建成功！显示任务 ID
+
+**优势**：
+- 无需 ETH
+- 仅需一次签名
+- 即时完成
+
+---
+
+## 📊 验证系统状态
+
+### 检查 Facilitator 健康状态
+
+```bash
+curl http://localhost:3001/health
+```
+
+**输出**：
+```json
+{
+  "status": "ok",
+  "chainId": 31337,
+  "contracts": {
+    "taskRegistry": "0x2279...",
+    "escrow": "0xa513...",
+    "usdc": "0x0165..."
+  }
+}
+```
+
+### 查看合约状态
+
+```bash
+cd packages/contracts
+npx hardhat console --network localhost
+```
 
 ```javascript
-// 获取 USDC 合约
-const USDC = await ethers.getContractFactory("MockUSDC");
-const usdc = await USDC.attach("0x5FC8d32690cc91D4c39d9d3abcBD16989F875707");
+// 获取任务数量
+const registry = await ethers.getContractAt("TaskRegistry", "0x2279...");
+const taskCount = await registry.taskCount();
+console.log("任务数量:", taskCount.toString());
 
-// 铸造 1000 USDC 给 Account #0
-await usdc.mint("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", ethers.parseUnits("1000", 6));
-
-// 铸造 500 USDC 给 Account #1
-await usdc.mint("0x70997970C51812dc3A010C7d01b50e0d17dc79C8", ethers.parseUnits("500", 6));
-
-// 退出
-.exit
+// 查看任务详情
+const task = await registry.tasks(1);
+console.log("任务 Creator:", task.creator);
+console.log("任务奖励:", ethers.formatUnits(task.reward, 6), "USDC");
 ```
-
-✅ **成功标志**: 两个交易都成功
-
----
-
-## 🎮 体验完整流程 (2分钟)
-
-### 场景: Creator 发布任务 → Agent 接取 → 完成
-
-#### 1. Creator 创建任务 (Account #0)
-
-1. 在 MetaMask 切换到 **Account #0**
-2. 访问 http://localhost:3000/create
-3. 点击右上角 "Connect Wallet"
-4. 填写任务:
-   - **描述**: `测试任务 - 分析区块链数据`
-   - **分类**: 数据分析
-   - **奖励**: `10` USDC
-   - **截止时间**: 选择未来 7 天
-5. 点击 "创建任务"
-6. MetaMask 会弹出 **2 次**:
-   - ① 授权 USDC
-   - ② 创建任务
-7. 等待确认
-
-✅ **成功**: 看到 "任务创建成功!"
-
-#### 2. Agent 接取任务 (Account #1)
-
-1. 在 MetaMask 切换到 **Account #1**
-2. 刷新页面,重新连接钱包
-3. 访问 http://localhost:3000/tasks
-4. 点击刚创建的任务
-5. 查看任务详情:
-   - 奖励: 10 USDC
-   - 需要质押: 2 USDC (20%)
-   - 你的 USDC 余额: 500 USDC
-6. 点击 "接取任务"
-7. MetaMask 会弹出 **2 次**:
-   - ① 授权质押 USDC
-   - ② 接取任务
-8. 等待确认
-
-✅ **成功**: 任务状态变为 "进行中"
-
-#### 3. Agent 提交结果
-
-1. 在任务详情页,找到"提交结果"表单
-2. 输入结果哈希: `ipfs://QmTest123abc`
-3. 点击 "提交结果"
-4. 确认 MetaMask 交易
-5. 等待确认
-
-✅ **成功**: 任务状态变为 "待验证"
-
-#### 4. Verifier 验证 (需要 Verifier 账户)
-
-⚠️ **注意**: Verifier 地址需要是部署时指定的账户
-
-查看 Verifier 地址:
-```bash
-cat /Users/kyd/task402/app/lib/config.json
-# 查找 "verifier" 字段
-```
-
-导入 Verifier 账户到 MetaMask,然后:
-1. 访问任务详情页
-2. 点击 "验证通过"
-3. 确认交易
-
-✅ **成功**:
-- 任务状态变为 "已完成"
-- Agent 收到 11.8 USDC (9.8 奖励 + 2 质押)
-
----
-
-## 🎯 快速验证
-
-### 检查 Agent 余额变化
-
-1. 在 MetaMask 切换到 **Account #1** (Agent)
-2. 添加 USDC 代币:
-   - 点击 "导入代币"
-   - 代币合约地址: `0x5FC8d32690cc91D4c39d9d3abcBD16989F875707`
-   - 代币符号: `USDC`
-   - 小数位数: `6`
-3. 查看余额:
-   - 初始: 500 USDC
-   - 接取任务后: 498 USDC (-2 质押)
-   - 完成任务后: 509.8 USDC (+11.8)
-
-✅ **资金流转正确!**
-
----
-
-## 📱 探索其他功能
-
-### 控制面板
-
-访问 http://localhost:3000/dashboard 查看:
-- 你创建的任务
-- 你接取的任务
-- 潜在收益统计
-
-### 任务列表
-
-访问 http://localhost:3000/tasks 浏览所有任务:
-- 按状态筛选 (全部/待接取/进行中/已完成)
-- 查看实时统计
-- 点击任务查看详情
 
 ---
 
 ## 🐛 常见问题
 
-### Q1: MetaMask 显示 "internal JSON-RPC error"
+### 问题 1: Hardhat 网络连接失败
 
-**解决**: 重置 MetaMask 账户
-1. 设置 → 高级 → 重置账户
-2. 刷新页面重新连接
-
-### Q2: 前端显示 "合约调用失败"
-
-**检查**:
-- Hardhat 网络是否在运行?
-- 合约是否已部署?
-- MetaMask 连接的网络是否是 Hardhat Local (Chain ID 31337)?
-
-### Q3: 看不到 USDC 余额
+**症状**: MetaMask 显示"无法连接到网络"
 
 **解决**:
-1. 确认已铸造 USDC
-2. 在 MetaMask 中手动导入 USDC 代币
-3. 检查合约地址是否正确
+1. 确保 Hardhat 网络在运行（终端1）
+2. MetaMask 切换到 "Hardhat Local" 网络
+3. 清除 MetaMask 活动和 nonce 数据
 
-### Q4: 任务列表为空
+### 问题 2: 交易失败 "insufficient funds"
+
+**症状**: 交易失败，提示余额不足
 
 **解决**:
-- 创建至少一个任务
-- 刷新页面
-- 检查浏览器控制台是否有错误
+```bash
+# 铸造测试 USDC
+cd packages/contracts
+npx hardhat console --network localhost
+
+const usdc = await ethers.getContractAt("MockUSDC", "0x0165...");
+await usdc.mint("0xYOUR_ADDRESS", ethers.parseUnits("1000", 6));
+```
+
+### 问题 3: Facilitator 返回 404
+
+**症状**: 零 Gas 创建时提示"Network error"
+
+**解决**:
+1. 确认 Facilitator 在运行（终端3）
+2. 访问 http://localhost:3001/health 验证
+3. 检查 `app/lib/config.json` 中 `facilitatorUrl` 配置
+
+### 问题 4: 签名验证失败
+
+**症状**: "Invalid signature" 错误
+
+**解决**:
+1. 确保使用最新部署的合约
+2. 确认 chainId 配置一致（31337）
+3. 重新部署合约并更新配置
 
 ---
 
-## 📚 下一步
+## 🔄 重新开始
 
-- 📖 阅读完整文档: [README.md](./README.md)
-- 🧪 查看测试报告: [TEST_REPORT.md](./TEST_REPORT.md)
-- 📋 端到端测试: [E2E_TEST_GUIDE.md](./E2E_TEST_GUIDE.md)
-- 🎉 项目完成报告: [FINAL_COMPLETION_REPORT.md](./FINAL_COMPLETION_REPORT.md)
+如需完全重置：
+
+```bash
+# 1. 停止所有服务 (Ctrl+C)
+
+# 2. 清理并重启 Hardhat
+cd packages/contracts
+rm -rf cache artifacts
+npx hardhat node
+
+# 3. 重新部署
+npx hardhat run scripts/deploy-local.js --network localhost
+
+# 4. 重启 Facilitator
+cd ../facilitator
+npm run dev
+
+# 5. 重启前端
+cd ../..
+npm run dev
+
+# 6. 重置 MetaMask
+# MetaMask 设置 -> 高级 -> 清除活动和 nonce 数据
+```
 
 ---
 
-## 🆘 需要帮助?
+## 📖 下一步
 
-- 🐛 问题反馈: [GitHub Issues](#)
-- 📧 联系我们: [Email](#)
-- 💬 社区讨论: [Discord](#)
+- 查看 [ZERO_GAS_GUIDE.md](./ZERO_GAS_GUIDE.md) 了解零 Gas 技术细节
+- 查看 [README.md](./README.md) 了解项目完整信息
+- 浏览前端代码 `app/create/page.tsx` 学习集成方法
 
 ---
 
-<div align="center">
+## 📞 需要帮助？
 
-**恭喜!你已经完成 Task402 快速体验** 🎉
+- 查看 GitHub Issues
+- 阅读完整文档
 
-[返回主文档](./README.md) • [查看详细文档](#-下一步)
+---
 
-</div>
+**最后更新**: 2025-10-25
+**版本**: 1.0.0

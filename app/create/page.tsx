@@ -7,6 +7,8 @@ import { ethers } from 'ethers';
 import Link from 'next/link';
 import { useTaskRegistry } from '../hooks/useTaskRegistry';
 import { useUSDC } from '../hooks/useUSDC';
+import { useWalletClient } from 'wagmi';
+import { createEIP3009Authorization } from '../lib/eip3009/signer';
 import config from '../lib/config.json';
 
 // 任务分类
@@ -20,6 +22,7 @@ const TASK_CATEGORIES = [
 
 export default function CreateTask() {
   const { address, isConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
 
   // 使用 hooks
   const { createTask, isWritePending, isConfirming, isConfirmed } = useTaskRegistry();
@@ -33,9 +36,69 @@ export default function CreateTask() {
     category: 0,
   });
 
-  const [step, setStep] = useState<'idle' | 'approving' | 'creating'>('idle');
+  const [step, setStep] = useState<'idle' | 'approving' | 'creating' | 'signing'>('idle');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<{ taskId: number } | null>(null);
+  const [useZeroGas, setUseZeroGas] = useState(false);
+
+  // 零 Gas 创建任务（使用 EIP-3009）
+  const handleCreateWithZeroGas = async (rewardAmount: bigint, deadlineTimestamp: number) => {
+    if (!walletClient || !address) {
+      throw new Error('钱包未连接');
+    }
+
+    console.log('使用零 Gas 费创建任务（EIP-3009）...');
+    setStep('signing');
+
+    // 1. 创建 ethers Signer
+    const provider = new ethers.BrowserProvider(walletClient);
+    const signer = await provider.getSigner();
+
+    // 2. 生成 EIP-3009 签名
+    console.log('生成 EIP-3009 签名...');
+    const signature = await createEIP3009Authorization(
+      signer,
+      config.contracts.usdc,
+      config.chainId,
+      config.contracts.escrow,
+      rewardAmount
+    );
+
+    console.log('签名生成成功:', signature);
+
+    // 3. 发送到 Facilitator 服务器
+    setStep('creating');
+    console.log('发送请求到 Facilitator...');
+
+    const response = await fetch(`${config.facilitatorUrl}/api/v1/tasks/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        description: formData.description,
+        reward: rewardAmount.toString(),
+        deadline: deadlineTimestamp,
+        category: formData.category,
+        creator: address,
+        signature,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Facilitator 请求失败');
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || '任务创建失败');
+    }
+
+    console.log('✅ 零 Gas 任务创建成功!', result);
+    return result.taskId;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,31 +134,40 @@ export default function CreateTask() {
         throw new Error(`USDC 余额不足。需要: ${formData.reward} USDC, 当前: ${ethers.formatUnits(usdcBalance, 6)} USDC`);
       }
 
-      // 步骤 1: 授权 USDC
-      console.log('步骤 1: 授权 USDC...');
-      setStep('approving');
-      await approve(config.contracts.taskRegistry as `0x${string}`, reward);
+      let taskId: number;
 
-      // 等待授权交易确认
-      // 注意: 这里需要等待 isConfirmed 状态更新
-      // 在实际使用中,应该通过 useEffect 监听 isConfirmed 状态
-      console.log('等待授权确认...');
+      if (useZeroGas) {
+        // 使用零 Gas 模式 (EIP-3009)
+        taskId = await handleCreateWithZeroGas(reward, deadlineTimestamp);
+        console.log(`✅ 零 Gas 任务创建成功! Task ID: ${taskId}`);
+      } else {
+        // 标准模式（需要 Gas）
+        // 步骤 1: 授权 USDC
+        console.log('步骤 1: 授权 USDC...');
+        setStep('approving');
+        await approve(config.contracts.taskRegistry as `0x${string}`, reward);
 
-      // 步骤 2: 创建任务
-      console.log('步骤 2: 创建任务...');
-      setStep('creating');
-      await createTask(
-        formData.description,
-        reward,
-        deadlineTimestamp,
-        formData.category
-      );
+        // 等待授权交易确认
+        // 注意: 这里需要等待 isConfirmed 状态更新
+        // 在实际使用中,应该通过 useEffect 监听 isConfirmed 状态
+        console.log('等待授权确认...');
 
-      console.log('✅ 任务创建成功!');
+        // 步骤 2: 创建任务
+        console.log('步骤 2: 创建任务...');
+        setStep('creating');
+        await createTask(
+          formData.description,
+          reward,
+          deadlineTimestamp,
+          formData.category
+        );
 
-      // 由于我们无法直接获取新创建的 taskId (需要监听事件),
-      // 这里简单提示用户前往任务列表查看
-      setSuccess({ taskId: 0 }); // taskId 0 表示未知,需要用户前往列表查看
+        console.log('✅ 任务创建成功!');
+        taskId = 0; // 标准模式下无法直接获取 taskId
+      }
+
+      // 设置成功状态
+      setSuccess({ taskId });
 
       // 重置表单
       setFormData({
@@ -154,9 +226,44 @@ export default function CreateTask() {
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             发布新任务
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 mb-8">
-            使用 USDC X402 协议创建任务,无需支付 Gas 费
+          <p className="text-gray-500 dark:text-gray-400 mb-4">
+            使用 USDC 创建任务，支持零 Gas 费模式（EIP-3009）
           </p>
+
+          {/* 零 Gas 切换开关 */}
+          <div className="mb-8 p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+            <label className="flex items-center space-x-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useZeroGas}
+                onChange={(e) => setUseZeroGas(e.target.checked)}
+                className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+              />
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                    ⚡ 启用零 Gas 费模式
+                  </span>
+                  {useZeroGas && (
+                    <span className="px-2 py-0.5 text-xs font-medium text-purple-700 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300 rounded-full">
+                      已启用
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  {useZeroGas ? (
+                    <>
+                      ✓ 使用 EIP-3009 签名授权，由 Facilitator 代付 Gas 费
+                      <br />
+                      ✓ 只需一次签名，无需支付任何 Gas 费用
+                    </>
+                  ) : (
+                    <>标准模式：需要两笔链上交易（授权 + 创建），您需要支付 Gas 费</>
+                  )}
+                </p>
+              </div>
+            </label>
+          </div>
 
           {/* USDC 余额显示 */}
           {isConnected && usdcBalance !== undefined && (
@@ -174,7 +281,15 @@ export default function CreateTask() {
                 ✅ 任务创建成功!
               </h3>
               <p className="text-green-700 dark:text-green-500 text-sm mb-3">
-                您的任务已成功创建。请前往任务列表查看新创建的任务。
+                {success.taskId > 0 ? (
+                  <>
+                    <strong>任务 ID: {success.taskId}</strong>
+                    <br />
+                    您的任务已成功创建（零 Gas 费！）。请前往任务列表查看。
+                  </>
+                ) : (
+                  <>您的任务已成功创建。请前往任务列表查看新创建的任务。</>
+                )}
               </p>
               <Link
                 href="/tasks"
@@ -273,18 +388,27 @@ export default function CreateTask() {
             </div>
 
             {/* 流程说明 */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <h4 className="text-blue-800 dark:text-blue-400 font-medium mb-2 flex items-center">
+            <div className={`${useZeroGas ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800' : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'} border rounded-lg p-4`}>
+              <h4 className={`${useZeroGas ? 'text-purple-800 dark:text-purple-400' : 'text-blue-800 dark:text-blue-400'} font-medium mb-2 flex items-center`}>
                 <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                创建任务流程
+                {useZeroGas ? '⚡ 零 Gas 创建流程' : '创建任务流程'}
               </h4>
-              <ol className="text-blue-700 dark:text-blue-500 text-sm space-y-1 ml-7 list-decimal">
-                <li>授权 TaskRegistry 合约使用您的 USDC</li>
-                <li>调用合约创建任务,USDC 将托管在 Escrow 合约</li>
-                <li>任务创建成功后,Agent 可以质押接取任务</li>
-              </ol>
+              {useZeroGas ? (
+                <ol className="text-purple-700 dark:text-purple-500 text-sm space-y-1 ml-7 list-decimal">
+                  <li>签名 EIP-3009 授权（链下操作，无 Gas）</li>
+                  <li>Facilitator 服务器验证签名并代付 Gas</li>
+                  <li>USDC 直接从您的地址转入 Escrow</li>
+                  <li>任务创建成功，返回任务 ID</li>
+                </ol>
+              ) : (
+                <ol className="text-blue-700 dark:text-blue-500 text-sm space-y-1 ml-7 list-decimal">
+                  <li>授权 TaskRegistry 合约使用您的 USDC（需要 Gas）</li>
+                  <li>调用合约创建任务，USDC 将托管在 Escrow（需要 Gas）</li>
+                  <li>任务创建成功后，Agent 可以质押接取任务</li>
+                </ol>
+              )}
             </div>
 
             {/* 提交按钮 */}
@@ -301,12 +425,13 @@ export default function CreateTask() {
                   <button
                     type="submit"
                     disabled={isWritePending || isConfirming || step !== 'idle'}
-                    className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-md font-medium transition-colors disabled:cursor-not-allowed"
+                    className={`flex-1 px-6 py-3 ${useZeroGas ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} disabled:bg-gray-400 text-white rounded-md font-medium transition-colors disabled:cursor-not-allowed`}
                   >
+                    {step === 'signing' && '⚡ 请签名...'}
                     {step === 'approving' && '授权中...'}
-                    {step === 'creating' && '创建中...'}
+                    {step === 'creating' && (useZeroGas ? '⚡ 零 Gas 创建中...' : '创建中...')}
                     {step === 'idle' && (isWritePending || isConfirming) && '处理中...'}
-                    {step === 'idle' && !isWritePending && !isConfirming && '创建任务'}
+                    {step === 'idle' && !isWritePending && !isConfirming && (useZeroGas ? '⚡ 零 Gas 创建任务' : '创建任务')}
                   </button>
                   <Link
                     href="/tasks"
