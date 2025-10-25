@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./interfaces/IUSDC.sol";
 
 /**
  * @title X402Escrow
@@ -338,71 +337,5 @@ contract X402Escrow is ReentrancyGuard {
         require(newPlatformFee + newVerifierFee <= MAX_FEE_RATE, "Fee too high");
         platformFeeRate = newPlatformFee;
         verifierFeeRate = newVerifierFee;
-    }
-
-    // ============ X402 + EIP-3009 扩展功能 ============
-
-    /**
-     * @notice 使用 EIP-3009 签名创建托管支付 (X402 协议)
-     * @param paymentHash 支付哈希
-     * @param payer Creator 地址
-     * @param payee Agent 地址
-     * @param usdcAddress USDC 合约地址
-     * @param amount USDC 金额
-     * @param deadline 截止时间
-     * @param taskId 任务ID
-     * @param validAfter EIP-3009: 有效起始时间
-     * @param validBefore EIP-3009: 有效截止时间
-     * @param nonce EIP-3009: 唯一随机数
-     * @param v ECDSA 签名参数
-     * @param r ECDSA 签名参数
-     * @param s ECDSA 签名参数
-     * @dev 由 Facilitator 代理执行,Creator 零 Gas
-     */
-    function createPaymentWithAuthorization(
-        bytes32 paymentHash,
-        address payer,
-        address payee,
-        address usdcAddress,
-        uint256 amount,
-        uint256 deadline,
-        uint256 taskId,
-        uint256 validAfter,
-        uint256 validBefore,
-        bytes32 nonce,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external nonReentrant {
-        require(payments[paymentHash].payer == address(0), "Payment exists");
-        require(payee != address(0), "Invalid payee");
-        require(amount > 0, "Invalid amount");
-        require(deadline > block.timestamp, "Invalid deadline");
-
-        // 使用 EIP-3009 从 Creator 转账 USDC 到 Escrow
-        IUSDC(usdcAddress).transferWithAuthorization(
-            payer,           // from: Creator
-            address(this),   // to: Escrow
-            amount,
-            validAfter,
-            validBefore,
-            nonce,
-            v, r, s
-        );
-
-        // 创建支付记录
-        payments[paymentHash] = Payment({
-            payer: payer,
-            payee: payee,
-            token: usdcAddress,  // USDC 地址
-            amount: amount,
-            createdAt: block.timestamp,
-            deadline: deadline,
-            status: PaymentStatus.Pending,
-            taskId: taskId,
-            disputed: false
-        });
-
-        emit PaymentCreated(paymentHash, payer, payee, amount, taskId);
     }
 }

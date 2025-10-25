@@ -1,0 +1,16 @@
+{
+  "name": "@task402/x402-sdk",
+  "version": "1.0.0",
+  "description": "X402 Client SDK - EIP-3009 signature generation utilities",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["x402", "eip-3009", "sdk", "usdc"],
+  "author": "Task402 Team",
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.15.0"
+  }
+}

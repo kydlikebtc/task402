@@ -3,7 +3,9 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./X402Escrow.sol";
+import "./interfaces/IUSDC.sol";
 
 /**
  * @title TaskRegistry
@@ -27,6 +29,8 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         uint256 createdAt;          // 创建时间
         uint256 completedAt;        // 完成时间
         TaskCategory category;      // 任务分类
+        uint256 stakeAmount;        // Agent 质押金额
+        bool stakeRefunded;         // 质押是否已退还
     }
 
     enum TaskStatus {
@@ -61,8 +65,17 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
     // X402 托管合约
     X402Escrow public escrow;
 
+    // USDC 合约地址
+    address public usdcAddress;
+
     // 验证节点
     address public verifierNode;
+
+    // 质押比例 (基点表示，100 = 1%, 2000 = 20%)
+    uint256 public stakePercentage = 2000; // 默认 20%
+
+    // 平台地址（用于接收惩罚质押）
+    address public platformAddress;
 
     // ============ 事件 ============
 
@@ -76,7 +89,20 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
 
     event TaskAssigned(
         uint256 indexed taskId,
-        address indexed agent
+        address indexed agent,
+        uint256 stakeAmount
+    );
+
+    event TaskAbandoned(
+        uint256 indexed taskId,
+        address indexed agent,
+        uint256 slashedAmount
+    );
+
+    event StakeRefunded(
+        uint256 indexed taskId,
+        address indexed agent,
+        uint256 amount
     );
 
     event TaskSubmitted(
@@ -125,14 +151,21 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
 
     // ============ 构造函数 ============
 
-    constructor(address _escrowAddress, address _verifierNode)
-        ERC721("Task402 Task NFT", "TASK402")
-    {
+    constructor(
+        address _escrowAddress,
+        address _verifierNode,
+        address _platformAddress,
+        address _usdcAddress
+    ) ERC721("Task402 Task NFT", "TASK402") {
         require(_escrowAddress != address(0), "Invalid escrow");
         require(_verifierNode != address(0), "Invalid verifier");
+        require(_platformAddress != address(0), "Invalid platform");
+        require(_usdcAddress != address(0), "Invalid USDC address");
 
         escrow = X402Escrow(_escrowAddress);
         verifierNode = _verifierNode;
+        platformAddress = _platformAddress;
+        usdcAddress = _usdcAddress;
     }
 
     // ============ 核心功能 ============
@@ -202,7 +235,9 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
             paymentHash: paymentHash,
             createdAt: block.timestamp,
             completedAt: 0,
-            category: category
+            category: category,
+            stakeAmount: 0,
+            stakeRefunded: false
         });
 
         // 铸造任务 NFT
@@ -214,23 +249,36 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
     }
 
     /**
-     * @notice Agent 接单
+     * @notice Agent 质押接单
      * @param taskId 任务ID
+     * @dev Agent 需要质押任务奖励的一定比例(默认20%)才能接单
      */
-    function assignTask(uint256 taskId) external taskExists(taskId) {
+    function assignTask(uint256 taskId)
+        external
+        payable
+        taskExists(taskId)
+        nonReentrant
+    {
         Task storage task = tasks[taskId];
 
         require(task.status == TaskStatus.Open, "Task not open");
         require(task.deadline > block.timestamp, "Task expired");
         require(msg.sender != task.creator, "Creator cannot assign");
 
+        // 计算所需质押金额 (仅支持 ETH 质押)
+        uint256 requiredStake = (task.reward * stakePercentage) / 10000;
+        require(msg.value == requiredStake, "Incorrect stake amount");
+
+        // 记录质押
         task.assignedAgent = msg.sender;
         task.status = TaskStatus.Assigned;
+        task.stakeAmount = msg.value;
+        task.stakeRefunded = false;
 
         // 更新托管支付的收款方为 Agent
         escrow.updatePayee(task.paymentHash, msg.sender);
 
-        emit TaskAssigned(taskId, msg.sender);
+        emit TaskAssigned(taskId, msg.sender, msg.value);
     }
 
     /**
@@ -302,10 +350,73 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         // 释放托管资金给完成任务的 Agent
         escrow.settle(task.paymentHash);
 
+        // 退还质押金给 Agent
+        if (task.stakeAmount > 0 && !task.stakeRefunded) {
+            task.stakeRefunded = true;
+
+            // 根据任务奖励代币类型决定如何退还质押
+            if (task.rewardToken == usdcAddress) {
+                // USDC 任务: 退还 USDC 质押
+                IERC20(usdcAddress).transfer(task.assignedAgent, task.stakeAmount);
+            } else {
+                // ETH 任务: 退还 ETH 质押
+                (bool success, ) = payable(task.assignedAgent).call{
+                    value: task.stakeAmount
+                }("");
+                require(success, "Stake refund failed");
+            }
+
+            emit StakeRefunded(taskId, task.assignedAgent, task.stakeAmount);
+        }
+
         // 更新 Agent 信誉
         _updateReputation(task.assignedAgent, true);
 
         emit TaskCompleted(taskId, task.assignedAgent, task.reward);
+    }
+
+    /**
+     * @notice Agent 放弃任务
+     * @param taskId 任务ID
+     * @dev Agent 放弃任务将失去质押金,任务重新开放
+     */
+    function abandonTask(uint256 taskId)
+        external
+        taskExists(taskId)
+        nonReentrant
+    {
+        Task storage task = tasks[taskId];
+
+        require(
+            task.status == TaskStatus.Assigned ||
+                task.status == TaskStatus.Submitted,
+            "Cannot abandon"
+        );
+        require(task.assignedAgent == msg.sender, "Not assigned agent");
+
+        // 惩罚: 质押金转给平台
+        uint256 slashedAmount = task.stakeAmount;
+        if (slashedAmount > 0 && !task.stakeRefunded) {
+            task.stakeRefunded = true; // 防止重复退还
+            (bool success, ) = payable(platformAddress).call{
+                value: slashedAmount
+            }("");
+            require(success, "Slash transfer failed");
+        }
+
+        // 重置任务状态
+        task.status = TaskStatus.Open;
+        task.assignedAgent = address(0);
+        task.resultHash = "";
+        task.stakeAmount = 0;
+
+        // 更新托管支付收款方回到合约
+        escrow.updatePayee(task.paymentHash, address(this));
+
+        // 降低 Agent 信誉
+        _updateReputation(msg.sender, false);
+
+        emit TaskAbandoned(taskId, msg.sender, slashedAmount);
     }
 
     /**
@@ -316,6 +427,7 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         external
         onlyTaskCreator(taskId)
         taskExists(taskId)
+        nonReentrant
     {
         Task storage task = tasks[taskId];
 
@@ -323,6 +435,18 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
             task.status == TaskStatus.Open || task.status == TaskStatus.Assigned,
             "Cannot cancel"
         );
+
+        // 如果任务已被接单,退还 Agent 的质押金
+        if (task.status == TaskStatus.Assigned && task.stakeAmount > 0) {
+            require(!task.stakeRefunded, "Stake already refunded");
+            task.stakeRefunded = true;
+            (bool success, ) = payable(task.assignedAgent).call{
+                value: task.stakeAmount
+            }("");
+            require(success, "Stake refund failed");
+
+            emit StakeRefunded(taskId, task.assignedAgent, task.stakeAmount);
+        }
 
         task.status = TaskStatus.Cancelled;
 
@@ -406,5 +530,146 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         require(msg.sender == verifierNode, "Not authorized");
         require(newVerifier != address(0), "Invalid address");
         verifierNode = newVerifier;
+    }
+
+    /**
+     * @notice 更新质押比例
+     * @param newPercentage 新的质押比例(基点, 1000 = 10%)
+     */
+    function updateStakePercentage(uint256 newPercentage) external {
+        require(msg.sender == platformAddress, "Not authorized");
+        require(newPercentage >= 1000 && newPercentage <= 5000, "Invalid percentage"); // 10% - 50%
+        stakePercentage = newPercentage;
+    }
+
+    /**
+     * @notice 计算任务所需的质押金额
+     * @param taskId 任务ID
+     */
+    function getRequiredStake(uint256 taskId)
+        external
+        view
+        taskExists(taskId)
+        returns (uint256)
+    {
+        return (tasks[taskId].reward * stakePercentage) / 10000;
+    }
+
+    // ============ X402 USDC 支持 ============
+
+    /**
+     * @notice 使用 USDC 和 EIP-3009 创建任务
+     * @param description 任务描述
+     * @param reward USDC 奖励金额 (6 decimals)
+     * @param deadline 截止时间戳
+     * @param category 任务分类
+     * @param validAfter EIP-3009 签名有效起始时间
+     * @param validBefore EIP-3009 签名有效截止时间
+     * @param nonce EIP-3009 nonce
+     * @param v ECDSA signature v
+     * @param r ECDSA signature r
+     * @param s ECDSA signature s
+     */
+    function createTaskWithUSDC(
+        string memory description,
+        uint256 reward,
+        uint256 deadline,
+        TaskCategory category,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant returns (uint256) {
+        require(bytes(description).length > 0, "Empty description");
+        require(reward > 0, "Invalid reward");
+        require(deadline > block.timestamp, "Invalid deadline");
+
+        // 生成任务ID
+        _taskIdCounter++;
+        uint256 taskId = _taskIdCounter;
+
+        // 生成支付哈希
+        bytes32 paymentHash = keccak256(
+            abi.encodePacked(taskId, msg.sender, reward, block.timestamp)
+        );
+
+        // 使用 EIP-3009 创建 X402 托管
+        escrow.createPaymentWithAuthorization(
+            paymentHash,
+            msg.sender,           // payer (Creator)
+            address(this),        // payee (暂时托管给 TaskRegistry)
+            usdcAddress,          // USDC token
+            reward,
+            deadline,
+            taskId,
+            validAfter,
+            validBefore,
+            nonce,
+            v, r, s
+        );
+
+        // 创建任务
+        tasks[taskId] = Task({
+            taskId: taskId,
+            creator: msg.sender,
+            description: description,
+            reward: reward,
+            rewardToken: usdcAddress,  // USDC 作为奖励代币
+            deadline: deadline,
+            status: TaskStatus.Open,
+            assignedAgent: address(0),
+            resultHash: "",
+            paymentHash: paymentHash,
+            createdAt: block.timestamp,
+            completedAt: 0,
+            category: category,
+            stakeAmount: 0,
+            stakeRefunded: false
+        });
+
+        // 铸造任务 NFT
+        _safeMint(msg.sender, taskId);
+
+        emit TaskCreated(taskId, msg.sender, reward, category, deadline);
+
+        return taskId;
+    }
+
+    /**
+     * @notice Agent 使用 USDC 质押接单
+     * @param taskId 任务ID
+     * @param stakeAmount USDC 质押金额 (应为任务奖励的 stakePercentage%)
+     */
+    function assignTaskWithUSDC(
+        uint256 taskId,
+        uint256 stakeAmount
+    ) external taskExists(taskId) nonReentrant {
+        Task storage task = tasks[taskId];
+
+        require(task.status == TaskStatus.Open, "Task not open");
+        require(task.deadline > block.timestamp, "Task expired");
+        require(msg.sender != task.creator, "Creator cannot assign");
+        require(task.rewardToken == usdcAddress, "Task not USDC");
+
+        // 计算所需质押金额
+        uint256 requiredStake = (task.reward * stakePercentage) / 10000;
+        require(stakeAmount == requiredStake, "Incorrect stake amount");
+
+        // Agent 需要先授权 USDC 给 TaskRegistry
+        // 转移 USDC 质押到合约
+        IERC20(usdcAddress).transferFrom(msg.sender, address(this), stakeAmount);
+
+        // 记录质押
+        task.assignedAgent = msg.sender;
+        task.status = TaskStatus.Assigned;
+        task.stakeAmount = stakeAmount;
+        task.stakeRefunded = false;
+
+        // 更新托管支付的收款方为 Agent
+        escrow.updatePayee(task.paymentHash, msg.sender);
+
+        emit TaskAssigned(taskId, msg.sender, stakeAmount);
     }
 }
