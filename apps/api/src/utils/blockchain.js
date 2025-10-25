@@ -159,24 +159,55 @@ class BlockchainService {
 
   /**
    * Agent 接单
+   * @param {number} taskId - 任务 ID
+   * @param {string} agentAddress - Agent 地址
+   * @param {object} signedTx - Agent 签名的交易(可选,用于中继模式)
    */
-  async assignTask(taskId, agentAddress) {
+  async assignTask(taskId, agentAddress, signedTx = null) {
     this.ensureInitialized();
     try {
       logger.info({
         message: 'Agent 接单',
         taskId,
-        agentAddress
+        agentAddress,
+        mode: signedTx ? 'relay' : 'direct'
       });
 
-      const tx = await this.taskRegistry.assignTask(taskId);
-      const receipt = await tx.wait();
+      let tx, receipt;
 
-      logger.info({
-        message: 'Agent 接单成功',
-        taskId,
-        txHash: receipt.hash
-      });
+      if (signedTx) {
+        // 中继模式: 使用 Agent 签名的交易
+        tx = await this.provider.sendTransaction(signedTx);
+        receipt = await tx.wait();
+        logger.info({
+          message: 'Agent 接单成功(中继模式)',
+          taskId,
+          txHash: receipt.hash
+        });
+      } else {
+        // 直接模式: 仅用于测试或后端代理
+        // 注意: 生产环境应该要求 Agent 自己签名
+        logger.warn({
+          message: '使用后端签名者代理 Agent 接单(仅测试用)',
+          taskId,
+          agentAddress
+        });
+
+        // 需要 signer 才能发送交易
+        if (!this.signer) {
+          throw new Error('No signer available for direct mode');
+        }
+
+        const contractWithSigner = this.taskRegistry.connect(this.signer);
+        tx = await contractWithSigner.assignTask(taskId);
+        receipt = await tx.wait();
+
+        logger.info({
+          message: 'Agent 接单成功(测试模式)',
+          taskId,
+          txHash: receipt.hash
+        });
+      }
 
       return {
         success: true,
@@ -195,25 +226,57 @@ class BlockchainService {
 
   /**
    * 提交任务结果
+   * @param {number} taskId - 任务 ID
+   * @param {string} resultHash - 结果哈希
+   * @param {string} agentAddress - Agent 地址
+   * @param {object} signedTx - Agent 签名的交易(可选,用于中继模式)
    */
-  async submitTask(taskId, resultHash) {
+  async submitTask(taskId, resultHash, agentAddress = null, signedTx = null) {
     this.ensureInitialized();
     try {
       logger.info({
         message: '提交任务结果',
         taskId,
-        resultHash
-      });
-
-      const tx = await this.taskRegistry.submitTask(taskId, resultHash);
-      const receipt = await tx.wait();
-
-      logger.info({
-        message: '任务结果提交成功',
-        taskId,
         resultHash,
-        txHash: receipt.hash
+        agentAddress,
+        mode: signedTx ? 'relay' : 'direct'
       });
+
+      let tx, receipt;
+
+      if (signedTx) {
+        // 中继模式: 使用 Agent 签名的交易
+        tx = await this.provider.sendTransaction(signedTx);
+        receipt = await tx.wait();
+        logger.info({
+          message: '任务结果提交成功(中继模式)',
+          taskId,
+          resultHash,
+          txHash: receipt.hash
+        });
+      } else {
+        // 直接模式: 仅用于测试或后端代理
+        logger.warn({
+          message: '使用后端签名者代理 Agent 提交(仅测试用)',
+          taskId,
+          agentAddress
+        });
+
+        if (!this.signer) {
+          throw new Error('No signer available for direct mode');
+        }
+
+        const contractWithSigner = this.taskRegistry.connect(this.signer);
+        tx = await contractWithSigner.submitTask(taskId, resultHash);
+        receipt = await tx.wait();
+
+        logger.info({
+          message: '任务结果提交成功(测试模式)',
+          taskId,
+          resultHash,
+          txHash: receipt.hash
+        });
+      }
 
       return {
         success: true,

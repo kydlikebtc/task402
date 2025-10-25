@@ -292,13 +292,15 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         Task storage task = tasks[taskId];
 
         require(task.status == TaskStatus.Verified, "Task not verified");
+        require(task.assignedAgent != address(0), "No agent assigned");
 
-        // 通过 X402 Escrow 结算支付
-        // 注意：这里需要先更新 Escrow 中的 payee 地址
-        // 实际应该在 verifyTask 时就更新，这里简化处理
-
+        // 标记任务为完成状态
         task.status = TaskStatus.Completed;
         task.completedAt = block.timestamp;
+
+        // 通过 X402 Escrow 结算支付给 Agent
+        // 释放托管资金给完成任务的 Agent
+        escrow.settle(task.paymentHash, task.assignedAgent);
 
         // 更新 Agent 信誉
         _updateReputation(task.assignedAgent, true);
