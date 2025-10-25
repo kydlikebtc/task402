@@ -31,7 +31,14 @@ async function main() {
   // 部署 X402Escrow
   console.log("📝 部署 X402Escrow...");
   const X402Escrow = await hre.ethers.getContractFactory("X402Escrow");
-  const escrow = await X402Escrow.deploy(usdcAddress);
+  const platformFeeRate = 100; // 1%
+  const verifierFeeRate = 50; // 0.5%
+  const escrow = await X402Escrow.deploy(
+    creator.address, // platformAddress
+    verifier.address, // verifierAddress
+    platformFeeRate,
+    verifierFeeRate
+  );
   await escrow.waitForDeployment();
   const escrowAddress = await escrow.getAddress();
   console.log("✅ X402Escrow 部署在:", escrowAddress);
@@ -46,26 +53,42 @@ async function main() {
   console.log("✅ TaskRegistry 部署在:", taskRegistryAddress);
   console.log("");
 
-  // 设置 TaskRegistry 为 Escrow 的授权合约
-  console.log("🔐 授权 TaskRegistry...");
-  await escrow.setAuthorizedContract(taskRegistryAddress, true);
-  console.log("✅ TaskRegistry 已授权");
-  console.log("");
-
   // 创建任务
   console.log("📋 创建任务...");
   const TASK_REWARD = hre.ethers.parseUnits("10", 6); // 10 USDC
 
-  // 批准 USDC
-  await usdc.connect(creator).approve(taskRegistryAddress, TASK_REWARD);
-  console.log("✅ 批准", hre.ethers.formatUnits(TASK_REWARD, 6), "USDC");
+  // 资金流: Creator -> TaskRegistry -> Escrow
+  // 步骤 1: Creator 转 USDC 给 TaskRegistry
+  await usdc.connect(creator).transfer(taskRegistryAddress, TASK_REWARD);
+  console.log("✅ 转账", hre.ethers.formatUnits(TASK_REWARD, 6), "USDC 给 TaskRegistry");
+
+  // 步骤 2: 让 TaskRegistry 授权 USDC 给 Escrow
+  // 使用 Hardhat 的 impersonateAccount
+  await hre.network.provider.request({
+    method: "hardhat_impersonateAccount",
+    params: [taskRegistryAddress],
+  });
+
+  // 设置 TaskRegistry 地址的 ETH 余额(不需要转账)
+  await hre.network.provider.send("hardhat_setBalance", [
+    taskRegistryAddress,
+    "0x56BC75E2D63100000", // 100 ETH in hex
+  ]);
+
+  const taskRegistrySigner = await hre.ethers.getSigner(taskRegistryAddress);
+
+  // TaskRegistry 授权给 Escrow
+  await usdc.connect(taskRegistrySigner).approve(escrowAddress, TASK_REWARD);
+  console.log("✅ TaskRegistry 批准", hre.ethers.formatUnits(TASK_REWARD, 6), "USDC 给 Escrow");
 
   // 创建任务
+  // function createTask(description, reward, rewardToken, deadline, category)
   const tx = await taskRegistry.connect(creator).createTask(
-    "测试任务",
-    "这是一个测试任务",
-    TASK_REWARD,
-    Math.floor(Date.now() / 1000) + 86400 // 24小时后截止
+    "测试任务-验证资金释放功能",  // description
+    TASK_REWARD,                      // reward
+    usdcAddress,                      // rewardToken
+    Math.floor(Date.now() / 1000) + 86400, // deadline (24小时后)
+    5  // TaskCategory.Other
   );
   const receipt = await tx.wait();
   console.log("✅ 任务创建成功,交易:", receipt.hash);
