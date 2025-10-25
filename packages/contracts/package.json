@@ -10,11 +10,16 @@
     "deploy:base": "hardhat run scripts/deploy.js --network base"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.2"
+    "@openzeppelin/contracts": "^5.4.0"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^4.0.2",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.1",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
-    "hardhat": "^2.19.5",
-    "dotenv": "^16.4.5"
+    "chai": "^6.2.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.26.3"
   }
 }

@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "./X402Escrow.sol";
 
 /**
@@ -12,8 +11,6 @@ import "./X402Escrow.sol";
  * @dev 每个任务都是一个 NFT，支持自动匹配、执行、验证和结算
  */
 contract TaskRegistry is ERC721, ReentrancyGuard {
-    using Counters for Counters.Counter;
-
     // ============ 状态变量 ============
 
     struct Task {
@@ -52,7 +49,7 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
     }
 
     // 任务计数器
-    Counters.Counter private _taskIds;
+    uint256 private _taskIdCounter;
 
     // 任务存储
     mapping(uint256 => Task) public tasks;
@@ -160,8 +157,8 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         require(deadline > block.timestamp, "Invalid deadline");
 
         // 生成任务ID
-        _taskIds.increment();
-        uint256 taskId = _taskIds.current();
+        _taskIdCounter++;
+        uint256 taskId = _taskIdCounter;
 
         // 生成支付哈希
         bytes32 paymentHash = keccak256(
@@ -300,7 +297,7 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
 
         // 通过 X402 Escrow 结算支付给 Agent
         // 释放托管资金给完成任务的 Agent
-        escrow.settle(task.paymentHash, task.assignedAgent);
+        escrow.settle(task.paymentHash);
 
         // 更新 Agent 信誉
         _updateReputation(task.assignedAgent, true);
@@ -361,7 +358,7 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
     }
 
     function getTotalTasks() external view returns (uint256) {
-        return _taskIds.current();
+        return _taskIdCounter;
     }
 
     function getAgentStats(address agent)
@@ -380,7 +377,7 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         view
         returns (uint256[] memory)
     {
-        uint256 totalTasks = _taskIds.current();
+        uint256 totalTasks = _taskIdCounter;
         uint256[] memory openTaskIds = new uint256[](limit);
         uint256 count = 0;
 
