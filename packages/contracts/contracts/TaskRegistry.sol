@@ -227,6 +227,9 @@ contract TaskRegistry is ERC721, ReentrancyGuard {
         task.assignedAgent = msg.sender;
         task.status = TaskStatus.Assigned;
 
+        // 更新托管支付的收款方为 Agent
+        escrow.updatePayee(task.paymentHash, msg.sender);
+
         emit TaskAssigned(taskId, msg.sender);
     }
 

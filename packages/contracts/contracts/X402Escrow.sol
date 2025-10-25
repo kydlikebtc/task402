@@ -88,6 +88,12 @@ contract X402Escrow is ReentrancyGuard {
         bool authorized
     );
 
+    event PayeeUpdated(
+        bytes32 indexed paymentHash,
+        address indexed oldPayee,
+        address indexed newPayee
+    );
+
     // ============ 修饰符 ============
 
     modifier onlyPlatform() {
@@ -304,6 +310,27 @@ contract X402Escrow is ReentrancyGuard {
         require(contractAddress != address(0), "Invalid contract address");
         authorizedContracts[contractAddress] = authorized;
         emit AuthorizedContractUpdated(contractAddress, authorized);
+    }
+
+    /**
+     * @notice 更新支付的收款方地址
+     * @param paymentHash 支付哈希
+     * @param newPayee 新的收款方地址
+     * @dev 只有授权合约(如 TaskRegistry)可以调用,用于在 Agent 接单时更新收款方
+     */
+    function updatePayee(bytes32 paymentHash, address newPayee)
+        external
+    {
+        require(authorizedContracts[msg.sender], "Not authorized");
+        require(newPayee != address(0), "Invalid payee address");
+
+        Payment storage payment = payments[paymentHash];
+        require(payment.status == PaymentStatus.Pending, "Payment not pending");
+
+        address oldPayee = payment.payee;
+        payment.payee = newPayee;
+
+        emit PayeeUpdated(paymentHash, oldPayee, newPayee);
     }
 
     function updateFeeRates(uint256 newPlatformFee, uint256 newVerifierFee) external onlyPlatform {
