@@ -15,7 +15,7 @@ async function main() {
   // 部署 MockUSDC
   console.log("📝 部署 MockUSDC...");
   const MockUSDC = await hre.ethers.getContractFactory("MockUSDC");
-  const usdc = await MockUSDC.deploy();
+  const usdc = await MockUSDC.deploy("USD Coin", "USDC");
   await usdc.waitForDeployment();
   const usdcAddress = await usdc.getAddress();
   console.log("✅ MockUSDC 部署在:", usdcAddress);
@@ -47,7 +47,12 @@ async function main() {
   // 部署 TaskRegistry
   console.log("📝 部署 TaskRegistry...");
   const TaskRegistry = await hre.ethers.getContractFactory("TaskRegistry");
-  const taskRegistry = await TaskRegistry.deploy(usdcAddress, escrowAddress);
+  const taskRegistry = await TaskRegistry.deploy(
+    escrowAddress,    // _escrowAddress
+    verifier.address, // _verifierNode
+    creator.address,  // _platformAddress
+    usdcAddress       // _usdcAddress
+  );
   await taskRegistry.waitForDeployment();
   const taskRegistryAddress = await taskRegistry.getAddress();
   console.log("✅ TaskRegistry 部署在:", taskRegistryAddress);
@@ -110,15 +115,29 @@ async function main() {
   console.log("💰 Agent 初始余额:", hre.ethers.formatUnits(agentBalanceBefore, 6), "USDC");
   console.log("");
 
-  // Agent 接单
+  // Agent 接单 (需要质押 20% USDC)
   console.log("👤 Agent 接单...");
-  await taskRegistry.connect(agent).assignTask(taskId);
+
+  // 计算质押金额 (20% of reward)
+  const STAKE_AMOUNT = TASK_REWARD * 20n / 100n; // 2 USDC
+  console.log("💰 需要质押:", hre.ethers.formatUnits(STAKE_AMOUNT, 6), "USDC");
+
+  // 先给 Agent 铸造一些 USDC
+  await usdc.mint(agent.address, STAKE_AMOUNT);
+  console.log("✅ 铸造", hre.ethers.formatUnits(STAKE_AMOUNT, 6), "USDC 给 Agent");
+
+  // Agent 授权 TaskRegistry 转账质押金
+  await usdc.connect(agent).approve(taskRegistryAddress, STAKE_AMOUNT);
+  console.log("✅ Agent 授权 TaskRegistry 转账质押金");
+
+  // Agent 接单 (USDC 任务)
+  await taskRegistry.connect(agent).assignTaskWithUSDC(taskId, STAKE_AMOUNT);
   console.log("✅ Agent 接单成功");
   console.log("");
 
   // Agent 提交结果
   console.log("📤 Agent 提交结果...");
-  await taskRegistry.connect(agent).submitResult(taskId, "任务完成");
+  await taskRegistry.connect(agent).submitTask(taskId, "任务完成");
   console.log("✅ 结果提交成功");
   console.log("");
 

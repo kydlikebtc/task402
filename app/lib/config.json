@@ -1,0 +1,14 @@
+{
+  "chainId": 31337,
+  "chainName": "Hardhat Local",
+  "rpcUrl": "http://127.0.0.1:8545",
+  "contracts": {
+    "taskRegistry": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "escrow": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "usdc": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+  },
+  "accounts": {
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "verifier": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  }
+}

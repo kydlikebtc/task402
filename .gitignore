@@ -50,3 +50,18 @@ tmp/
 
 # Archive
 .archive/
+
+# Hardhat deployments (local only)
+packages/contracts/deployments/local.json
+packages/contracts/hardhat-node.log
+
+# Next.js
+apps/web/next-env.d.ts
+.next/
+next-env.d.ts
+
+# Frontend duplicate (if exists)
+packages/frontend/
+
+# Temporary files
+*.log
