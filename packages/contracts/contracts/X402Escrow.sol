@@ -43,6 +43,9 @@ contract X402Escrow is ReentrancyGuard {
     uint256 public platformFeeRate;     // 平台费率（基点，100 = 1%）
     uint256 public verifierFeeRate;     // 验证节点费率
 
+    // 授权合约（允许调用 settle 的合约，如 TaskRegistry）
+    mapping(address => bool) public authorizedContracts;
+
     // 常量
     uint256 public constant MAX_FEE_RATE = 1000; // 10% 最大费率
 
@@ -78,6 +81,11 @@ contract X402Escrow is ReentrancyGuard {
     event DisputeResolved(
         bytes32 indexed paymentHash,
         bool payeeWins
+    );
+
+    event AuthorizedContractUpdated(
+        address indexed contractAddress,
+        bool authorized
     );
 
     // ============ 修饰符 ============
@@ -164,7 +172,8 @@ contract X402Escrow is ReentrancyGuard {
         require(
             msg.sender == payment.payer ||
             msg.sender == platformAddress ||
-            msg.sender == verifierAddress,
+            msg.sender == verifierAddress ||
+            authorizedContracts[msg.sender],  // 允许授权合约调用
             "Unauthorized"
         );
 
@@ -280,6 +289,21 @@ contract X402Escrow is ReentrancyGuard {
     function updateVerifierAddress(address newAddress) external onlyPlatform {
         require(newAddress != address(0), "Invalid address");
         verifierAddress = newAddress;
+    }
+
+    /**
+     * @notice 设置授权合约
+     * @param contractAddress 合约地址
+     * @param authorized 是否授权
+     * @dev 只有平台可以调用此函数,授权可信合约调用 settle
+     */
+    function setAuthorizedContract(address contractAddress, bool authorized)
+        external
+        onlyPlatform
+    {
+        require(contractAddress != address(0), "Invalid contract address");
+        authorizedContracts[contractAddress] = authorized;
+        emit AuthorizedContractUpdated(contractAddress, authorized);
     }
 
     function updateFeeRates(uint256 newPlatformFee, uint256 newVerifierFee) external onlyPlatform {

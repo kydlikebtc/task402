@@ -53,6 +53,12 @@ async function main() {
   console.log("✅ TaskRegistry 部署在:", taskRegistryAddress);
   console.log("");
 
+  // 授权 TaskRegistry 调用 escrow.settle()
+  console.log("🔐 授权 TaskRegistry...");
+  await escrow.connect(creator).setAuthorizedContract(taskRegistryAddress, true);
+  console.log("✅ TaskRegistry 已被授权调用 escrow.settle()");
+  console.log("");
+
   // 创建任务
   console.log("📋 创建任务...");
   const TASK_REWARD = hre.ethers.parseUnits("10", 6); // 10 USDC
